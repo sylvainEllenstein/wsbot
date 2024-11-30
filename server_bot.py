@@ -9,7 +9,7 @@ arrows_descr = ["up", "down", "left", "right", "rshift", "space"]
 arrows_state = [False] * len(arrows_descr)
 
 go_ahead = False
-motor_dt = 0.02  # pour les asyncio.sleep des moteurs
+motor_dt = 0.01  # pour les asyncio.sleep des moteurs
 
 max_sp = 1.0
 std_sp = 0.85
@@ -29,9 +29,11 @@ def accepted(state):
 	détermine si un état de la commande est valide ou non
 	"""
 	if (state[0] and state[1]) or (state[2] and state[3]):
+		print("NOPE !", arrows_state)
 		return False
 	
 	if state[4] and (state[1]):
+		print("NOPE ! 2", arrows_state)
 		return False
 	
 	return True
@@ -71,11 +73,10 @@ def test0():
 	
 async def set_speed(sp, transition_time=0.24):
 	""" 
-	TODO : exception pour pouvoir être kill rapidement
+	TODO : debug le système de mutex avec go_ahead
 	prend deux tuples (vitesses de chaque moteur) et passe en un temps donné de la vitesse actuelle à sp
 	--> diminuer transition_time pour avoir moins de latence, mais peut devenir trop violent pour le moteur 
     """
-	global go_ahead
 
 	current_speed_left = kit.motor1.throttle
 	current_speed_right = kit.motor2.throttle
@@ -83,49 +84,40 @@ async def set_speed(sp, transition_time=0.24):
 	dsp_left = (sp[0] - current_speed_left) / N_steps
 	dsp_right = (sp[1] - current_speed_right) / N_steps
 	for _ in range(N_steps):
-		if not go_ahead:
-			print("set_speed returned earlier")
-			go_ahead = True
-			return 1
+				
 		kit.motor1.throttle += dsp_left  # modifier évt si trop relou ...
 		kit.motor2.throttle += dsp_right
-		await asyncio.sleep(motor_dt)  # en théorie OK si ce await permet de rebasculer à d'autres 
-	go_ahead = False
-	return 0
+		await asyncio.sleep(motor_dt)  # en théorie OK (rebascule sur autres endroits ?)
+	
+	print("Done")
 
 
 """
 gestion des fins d'appel de set_speed 
 
-le booléen [go_ahead] est global, vaut 0 si set_speed autorisé, 1 sinon
--> initialement à 0
--> quand manage_state lance un appel :
-	- si à 0, mettre à 1, et lancer l'appel de set_speed
-    - si à 1 (-> une exécution est en cours): mettre à 0, puis attendre tant que pas à 1
-			-> set_speed doit checker l'état : OK tant que 1, mais si à 0, s'arrête et remet à 1
-			-> ensuite manage_state lance la prochaine exécution (go_ahead étant à 1)
-		-> remise à 0 à la fin d'un appel normal de set_speed
+[NOPE]	[le booléen [go_ahead] est global, vaut 0 si set_speed autorisé, 1 sinon
+	-> initialement à 0
+	-> quand manage_state lance un appel :
+		- si à 0, mettre à 1, et lancer l'appel de set_speed
+		- si à 1 (-> une exécution est en cours): mettre à 0, puis attendre tant que pas à 1
+				-> set_speed doit checker l'état : OK tant que 1, mais si à 0, s'arrête et remet à 1
+				-> ensuite manage_state lance la prochaine exécution (go_ahead étant à 1)
+			-> remise à 0 à la fin d'un appel normal de set_speed
 
-autre possibilité : 
-gérer les exécutions parallèles avec deux canaux de asyncio.gather, et chaque "fil" peut arrêter l'autre
+	autre possibilité : 
+	gérer les exécutions parallèles avec deux canaux de asyncio.gather, et chaque "fil" peut arrêter l'autre]
 
-ou alors chercher un sémaphore asyncio ?
-				
+On lance les appels à set_speed avec une tâche asyncio.create_task, et on la cancel quand on lance la suivante
+-> amélioration : créer un futur à la fin de set_speed
 """
 
 
 async def manage_state():
 	"""
-    RELOU -> prendre qqch en argument pour plus de clarté ??
-
-
 	
 	étant donné l'état des touches enfoncées, appelle set_speed en fonction
     --> fonction appelée en permanence par le main; fait un (seul ?) appel à set_speed, et arrête le précédent si encore en cours
     """
-	print("called manage_state()")
-
-	global go_ahead
 
 	if accepted(state=arrows_state):
 		# à partir de là, on calcule le set_speed qu'on doit mettre
@@ -146,28 +138,19 @@ async def manage_state():
 				else:
 					rsp = basis_speed
 					lsp = basis_speed * (1 - rot_diff) * sgn(basis_speed)
-			elif arrows_state[1]:
+			elif arrows_state[3]:
 				if basis_speed == 0.0:
 					rsp = - rot_sp
 					lsp = rot_sp
 				else:
 					lsp = basis_speed
 					rsp = basis_speed * (1 - rot_diff) * sgn(basis_speed)
+			else:
+				lsp = basis_speed
+				rsp = basis_speed
+
 		print(f"Aiming at speeds : {lsp}, {rsp}")
-		if not go_ahead:
-			go_ahead = True
-			await set_speed((lsp, rsp))  # vérif syntaxe
-		else:
-			go_ahead = False
-			while not go_ahead:
-				...  # pas terrible; s'assurer que l'exécution de set_speed précédente se fait bien en parallèle...
-				# (qqs print à rajouter)
-			await set_speed((lsp, rsp))
-		
-		# websocket.send("Command accepted")  # --> on s'en fiche ici
-	else:
-		...
-		# websocket.send("Command not accepted")  # --> faire afficher dans le terminal de client_remote 
+		await set_speed((lsp, rsp))
 
 
 def modif_arrows_state(action, key):
@@ -181,22 +164,32 @@ def modif_arrows_state(action, key):
 			return 
 	print(f"Invalid message from websocket - for key: {action}, {key}")
 
+async def void_task():
+	pass
+
 
 async def handler(websocket):
+	task = asyncio.create_task(void_task())
+	
 	async for message in websocket:
-		# await websocket.send(message)
-		print("Received a wbs on server!!!")
-		action_key = message.split(" ")
+		# print("Received a wbs on server!!!")
+		action_key = message.split(" : ")
 		try:
 			modif_arrows_state(action=action_key[0], key=action_key[1])
 		except:
 			print(f"Wrong behavior on arrows_state, message : \n {message}")
-		print("Trying to send from server")
-		await websocket.send(f"{kit.motor1.throttle} {kit.motor2.throttle}")
-		print("Over sent on server side !")
+		
+		# await websocket.send(f"{kit.motor1.throttle} {kit.motor2.throttle}")
+		try:
+			task.cancel()
+		except asyncio.CancelledError:
+			print("Cancelled error occurred before launching manage_state")
+		except Exception as e:
+			print("Another exception happened : ", e)
 
-		# await manage_state()  # await est la bonne syntaxe normalement
-
+		finally:
+			task = asyncio.create_task(manage_state())  
+			# await est la bonne syntaxe normalement
 
 
 # TODO:
@@ -232,7 +225,7 @@ async def handler(websocket):
 
 
 async def main():
-    async with serve(handler, None, 8765):  # valeur de host --> None devrait marcher pour IP local
+    async with serve(handler, None, 8765, ping_interval=None):  # valeur de host --> None devrait marcher pour IP local
         await asyncio.get_running_loop().create_future()  # run forever
 
 # pour faire des tests rapidement, utiliser mock_adafruitMotorkit qui doit afficher la vitesse en direct

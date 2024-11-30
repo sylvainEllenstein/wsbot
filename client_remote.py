@@ -35,7 +35,7 @@ async def test_connection():
 
 pygame.init()
 
-def main():
+async def main():
 
     print("Initializing client remote ...")
     screen = pygame.display.set_mode((1280, 720))
@@ -50,7 +50,7 @@ def main():
                  "down": [(640, 470), (580, 390), (700, 390)], 
                  "up": [(640, 250), (580, 330), (700, 330)],
                  "rshift" : [(700, 310), (640, 230), (580, 310), (580, 280), (640, 200), (700, 280)],
-                 "space" : [(580, 500), (580, 600), (700, 600), (700, 500)]}
+                 "space" : [(580, 500), (580, 550), (700, 550), (700, 500)]}
 
     for t in figures.values():
         pygame.draw.polygon(screen, released_color, t, width=0)
@@ -59,33 +59,34 @@ def main():
               pygame.K_DOWN : "down", 
               pygame.K_LEFT : "left", 
               pygame.K_RIGHT : "right", 
-              pygame.K_RSHIFT : "rshift"}
+              pygame.K_RSHIFT : "rshift", 
+              pygame.K_SPACE : "space"}
     
-    with websockets.connect("ws://{ip}:8765") as websocket:
+    async with websockets.connect(f"ws://{ip}:8765", ping_interval=None, ping_timeout=20) as websocket:  # utilisation de .asyncio.client ??
         while running:
             for event in pygame.event.get():
+
+                # TODO : gérer les timeout, les catch, pour ne pas encombrer le local
+                # faire aussi des arrêts propres pour la sortie de manière générale (conventions de signaux pour le serveur)
+
                 if event.type == pygame.QUIT:
                     running = False
                 if event.type == pygame.KEYDOWN:
                     try:
                         pygame.draw.polygon(screen, pressed_color, figures[arrows[event.key]], width=0)
-                        websocket.send(f"pressed : {arrows[event.key]}")
-                    except:  # à préciser
+                        await websocket.send(f"pressed : {arrows[event.key]}")
+                    except KeyError:  # à préciser
                         print("Other key pressed")
-                        ...  # autre touche, inintéressant
-
 
                 if event.type == pygame.KEYUP:
                     try:
                         pygame.draw.polygon(screen, released_color, figures[arrows[event.key]], width=0)
-                        websocket.send(f"released : {arrows[event.key]}")               
-                    except:  # à préciser
+                        await websocket.send(f"released : {arrows[event.key]}")               
+                    except KeyError:  # à préciser
                         print("Other key released")
-                        ...  # autre touche, inintéressant
-                    
 
-            # flip() the display to put your work on screen
-            pygame.display.flip()
+
+            pygame.display.flip()  # flip() the display to put your work on screen
             clock.tick(60)  # limits FPS to 60
             # /!\ à enlever évt pour ne pas créer d'attente / awaitable ?
         pygame.quit()
@@ -93,9 +94,10 @@ def main():
 
 
 if __name__ == '__main__':
-    asyncio.run(test_connection())
+    asyncio.run(main())  # ou test_connection 
+
+
 
     # TODO : faire tourner le ws pendant que le pygame fonctionne et reste responsive
 
-    # main()
 
