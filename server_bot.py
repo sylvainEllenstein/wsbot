@@ -5,7 +5,7 @@ from websockets.asyncio.server import serve
 from mock_adafruit_motorkit import MotorKit  # ou sans le mock_
 import time
 
-arrows_descr = ["up", "down", "left", "right", "rshift"]
+arrows_descr = ["up", "down", "left", "right", "rshift", "space"]
 arrows_state = [False] * len(arrows_descr)
 
 go_ahead = False
@@ -132,21 +132,27 @@ async def manage_state():
 		lsp = 0.0
 		rsp = 0.0
 		basis_speed = max_sp if arrows_state[4] else (std_sp if arrows_state[0] else (-std_sp if arrows_state[1] else 0.0))
-		if arrows_state[2]:
-			# regarder si basis_sp != 0, on peut jouer avec ce qu'on fait pour les plus grdes vitesses, ou alors simplifier le truc
-			if basis_speed == 0.0:
-				lsp = - rot_sp
-				rsp = rot_sp
-			else:
-				rsp = basis_speed
-				lsp = basis_speed * (1 - rot_diff) * sgn(basis_speed)
-		elif arrows_state[1]:
-			if basis_speed == 0.0:
-				rsp = - rot_sp
-				lsp = rot_sp
-			else:
-				lsp = basis_speed
-				rsp = basis_speed * (1 - rot_diff) * sgn(basis_speed)
+		
+		if arrows_state[5]:  # espace -> STOP
+			lsp = 0.0
+			rsp = 0.0
+
+		else:	
+			if arrows_state[2]:
+				# regarder si basis_sp != 0, on peut jouer avec ce qu'on fait pour les plus grdes vitesses, ou alors simplifier le truc
+				if basis_speed == 0.0:
+					lsp = - rot_sp
+					rsp = rot_sp
+				else:
+					rsp = basis_speed
+					lsp = basis_speed * (1 - rot_diff) * sgn(basis_speed)
+			elif arrows_state[1]:
+				if basis_speed == 0.0:
+					rsp = - rot_sp
+					lsp = rot_sp
+				else:
+					lsp = basis_speed
+					rsp = basis_speed * (1 - rot_diff) * sgn(basis_speed)
 		print(f"Aiming at speeds : {lsp}, {rsp}")
 		if not go_ahead:
 			go_ahead = True
@@ -166,7 +172,7 @@ async def manage_state():
 
 def modif_arrows_state(action, key):
 	d = {"released": False, "pressed": True}
-	for i in range(5):
+	for i in range(6):
 		if key == arrows_descr[i]:
 			try:
 				arrows_state[i] = d[action]
@@ -181,11 +187,15 @@ async def handler(websocket):
 		# await websocket.send(message)
 		print("Received a wbs on server!!!")
 		action_key = message.split(" ")
-		# modif_arrows_state(action=action_key[0], key=action_key[1])
+		try:
+			modif_arrows_state(action=action_key[0], key=action_key[1])
+		except:
+			print(f"Wrong behavior on arrows_state, message : \n {message}")
 		print("Trying to send from server")
 		await websocket.send(f"{kit.motor1.throttle} {kit.motor2.throttle}")
 		print("Over sent on server side !")
-		# await manage_state()  # qqch de particulier à faire ??
+
+		# await manage_state()  # await est la bonne syntaxe normalement
 
 
 
