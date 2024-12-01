@@ -140,39 +140,41 @@ def manage_state():
     --> fonction appelée en permanence par le main; fait un (seul ?) appel à set_speed, et arrête le précédent si encore en cours
     """
 
-	if accepted(state=arrows_state):
-		# à partir de là, on calcule le set_speed qu'on doit mettre
+	if not accepted(state=arrows_state):
+		return (0.0, 0.0)
+	
+	# à partir de là, on calcule le set_speed qu'on doit mettre
+	lsp = 0.0
+	rsp = 0.0
+	basis_speed = max_sp if arrows_state[4] else (std_sp if arrows_state[0] else (-std_sp if arrows_state[1] else 0.0))
+
+	if arrows_state[5]:  # espace -> STOP
 		lsp = 0.0
 		rsp = 0.0
-		basis_speed = max_sp if arrows_state[4] else (std_sp if arrows_state[0] else (-std_sp if arrows_state[1] else 0.0))
 
-		if arrows_state[5]:  # espace -> STOP
-			lsp = 0.0
-			rsp = 0.0
-
-		else:
-			if arrows_state[2]:
-				# regarder si basis_sp != 0, on peut jouer avec ce qu'on fait pour les plus grdes vitesses, ou alors simplifier le truc
-				if basis_speed == 0.0:
-					lsp = - rot_sp
-					rsp = rot_sp
-				else:
-					rsp = basis_speed
-					lsp = basis_speed * (1 - rot_diff) * sgn(basis_speed)
-			elif arrows_state[3]:
-				if basis_speed == 0.0:
-					rsp = - rot_sp
-					lsp = rot_sp
-				else:
-					lsp = basis_speed
-					rsp = basis_speed * (1 - rot_diff) * sgn(basis_speed)
+	else:
+		if arrows_state[2]:
+			# regarder si basis_sp != 0, on peut jouer avec ce qu'on fait pour les plus grdes vitesses, ou alors simplifier le truc
+			if basis_speed == 0.0:
+				lsp = - rot_sp
+				rsp = rot_sp
+			else:
+				rsp = basis_speed
+				lsp = basis_speed * (1 - rot_diff) * sgn(basis_speed)
+		elif arrows_state[3]:
+			if basis_speed == 0.0:
+				rsp = - rot_sp
+				lsp = rot_sp
 			else:
 				lsp = basis_speed
-				rsp = basis_speed
+				rsp = basis_speed * (1 - rot_diff) * sgn(basis_speed)
+		else:
+			lsp = basis_speed
+			rsp = basis_speed
 
-		print(f"Aiming at speeds : {lsp}, {rsp}")
+	print(f"Aiming at speeds : {lsp}, {rsp}")
 
-		return (lsp, rsp)
+	return (lsp, rsp)
 
 
 def modif_arrows_state(action, key):
