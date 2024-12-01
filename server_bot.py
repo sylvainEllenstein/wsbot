@@ -2,13 +2,13 @@
 
 import asyncio
 from websockets.asyncio.server import serve
-from mock_adafruit_motorkit import MotorKit  # ou sans le mock_
+from adafruit_motorkit import MotorKit  # ou sans le mock_
 import time
 
 arrows_descr = ["up", "down", "left", "right", "rshift", "space"]
 arrows_state = [False] * len(arrows_descr)
 
-go_ahead = False
+
 motor_dt = 0.01  # pour les asyncio.sleep des moteurs
 
 max_sp = 1.0
@@ -70,26 +70,47 @@ def test0():
 
 # évt : test_rand qui fait faire des mouvements aléatoires raisonnables, en affichant ce qui doit se passer dans la console
 
+async def ssp0(sp):
+	print("No time for dunders")
+	kit.motor1.throttle = sp[0]
+	kit.motor2.throttle = sp[1]
+
 	
-async def set_speed(sp, transition_time=0.24):
+async def set_speed(sp, transition_time=0.08):
 	""" 
 	TODO : debug le système de mutex avec go_ahead
 	prend deux tuples (vitesses de chaque moteur) et passe en un temps donné de la vitesse actuelle à sp
 	--> diminuer transition_time pour avoir moins de latence, mais peut devenir trop violent pour le moteur 
     """
 
-	current_speed_left = kit.motor1.throttle
-	current_speed_right = kit.motor2.throttle
-	N_steps = int(transition_time / motor_dt)
-	dsp_left = (sp[0] - current_speed_left) / N_steps
-	dsp_right = (sp[1] - current_speed_right) / N_steps
-	for _ in range(N_steps):
-				
-		kit.motor1.throttle += dsp_left  # modifier évt si trop relou ...
-		kit.motor2.throttle += dsp_right
-		await asyncio.sleep(motor_dt)  # en théorie OK (rebascule sur autres endroits ?)
-	
-	print("Done")
+	print("begbegbegb")
+
+	try:
+		current_speed_left = kit.motor1.throttle
+		current_speed_right = kit.motor2.throttle
+
+		print(f"we are currently navigating at {current_speed_left} {current_speed_right} sir")
+
+		N_steps = int(transition_time / motor_dt)
+		# print("bro1")
+		dsp_left = (sp[0] - current_speed_left) / N_steps
+		# print("bro2")
+		# s'arrête ici pour aucune raison
+
+		dsp_right = (sp[1] - current_speed_right) / N_steps
+		print("In there ?")
+		for _ in range(N_steps):
+
+			kit.motor1.throttle = kit.motor1.throttle + dsp_left  # modifier évt si trop relou ...
+			kit.motor2.throttle = kit.motor2.throttle + dsp_right
+			await asyncio.sleep(motor_dt)  # en théorie OK (rebascule sur autres endroits ?)
+
+			print(f"{kit.motor1.throttle}, {kit.motor2.throttle}")
+
+		print("Done")
+
+	except asyncio.CancelledError:
+		print("I was cancelled bro")
 
 
 """
@@ -112,7 +133,7 @@ On lance les appels à set_speed avec une tâche asyncio.create_task, et on la c
 """
 
 
-async def manage_state():
+def manage_state():
 	"""
 	
 	étant donné l'état des touches enfoncées, appelle set_speed en fonction
@@ -124,12 +145,12 @@ async def manage_state():
 		lsp = 0.0
 		rsp = 0.0
 		basis_speed = max_sp if arrows_state[4] else (std_sp if arrows_state[0] else (-std_sp if arrows_state[1] else 0.0))
-		
+
 		if arrows_state[5]:  # espace -> STOP
 			lsp = 0.0
 			rsp = 0.0
 
-		else:	
+		else:
 			if arrows_state[2]:
 				# regarder si basis_sp != 0, on peut jouer avec ce qu'on fait pour les plus grdes vitesses, ou alors simplifier le truc
 				if basis_speed == 0.0:
@@ -150,7 +171,8 @@ async def manage_state():
 				rsp = basis_speed
 
 		print(f"Aiming at speeds : {lsp}, {rsp}")
-		await set_speed((lsp, rsp))
+
+		return (lsp, rsp)
 
 
 def modif_arrows_state(action, key):
@@ -161,16 +183,16 @@ def modif_arrows_state(action, key):
 				arrows_state[i] = d[action]
 			except KeyError:
 				print(f"Invalid message from websocket - for action : {action}, {key}")
-			return 
+			return
 	print(f"Invalid message from websocket - for key: {action}, {key}")
 
 async def void_task():
-	pass
-
+	kit.motor1.throttle = 0.0
+	kit.motor2.throttle = 0.0
 
 async def handler(websocket):
 	task = asyncio.create_task(void_task())
-	
+
 	async for message in websocket:
 		# print("Received a wbs on server!!!")
 		action_key = message.split(" : ")
@@ -178,32 +200,35 @@ async def handler(websocket):
 			modif_arrows_state(action=action_key[0], key=action_key[1])
 		except:
 			print(f"Wrong behavior on arrows_state, message : \n {message}")
-		
+
 		# await websocket.send(f"{kit.motor1.throttle} {kit.motor2.throttle}")
 		try:
 			task.cancel()
-		except asyncio.CancelledError:
-			print("Cancelled error occurred before launching manage_state")
+			print("The task was canceled here.")
+		# except asyncio.CancelledError:
+		# 	print("Cancelled error occurred before launching manage_state")
 		except Exception as e:
 			print("Another exception happened : ", e)
 
 		finally:
-			task = asyncio.create_task(manage_state())  
-			# await est la bonne syntaxe normalement
+			(lsp, rsp) = manage_state()
+			task = asyncio.create_task(set_speed((lsp, rsp)))
+			print("launched task!")
 
+			# await task
 
 # TODO:
 # le ws-server retourne en permanence la position actuelle estimée
-# sert à tester que la connexion marche bien 
-# 
+# sert à tester que la connexion marche bien
+#
 # (si on veut purement tester en local, mettre la connexion ws en loopback)
-#  
+#
 # séparer en modules (motors, pose_estimate)
 # vitesse des moteurs en live : pour transition fluides, passages d'une vitesse à une autre via fct affine
-# -> géré au plus bas niveau : définir proprement les fonctions à utiliser 
-# 
+# -> géré au plus bas niveau : définir proprement les fonctions à utiliser
+#
 # faire un .sh pour tout lancer bien 
-# 
+#
 # pour connaître les caractéristiques des moteurs, faire un étalonnage ds un script mode manuel
 # 
 # quickpi ?
@@ -231,5 +256,14 @@ async def main():
 # pour faire des tests rapidement, utiliser mock_adafruitMotorkit qui doit afficher la vitesse en direct
 # --> voir comment modifier l'action faite à l'assignement des motor.throttle sur la doc ... (chiant)
 
-asyncio.run(main())
+
+if __name__ == '__main__':
+	print("Starting server")
+	try:
+		asyncio.run(main())
+	except Exception as e:
+		print("\nEncountered an exception, catched in main : \n")
+		print(e)
+		print("\n >>> Stopping here")
+		exit()
 

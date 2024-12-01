@@ -5,7 +5,7 @@ import websockets
 from time import perf_counter
 import pygame
 
-ip = ["192.168.1.100", "localhost"][1]
+ip = ["192.168.1.100", "localhost"][0]
 
 
 def hello():
@@ -62,7 +62,7 @@ async def main():
               pygame.K_RSHIFT : "rshift", 
               pygame.K_SPACE : "space"}
     
-    async with websockets.connect(f"ws://{ip}:8765", ping_interval=None, ping_timeout=20) as websocket:  # utilisation de .asyncio.client ??
+    async with websockets.connect(f"ws://{ip}:8765", ping_interval=None, ping_timeout=None) as websocket:  # utilisation de .asyncio.client ??
         while running:
             for event in pygame.event.get():
 
