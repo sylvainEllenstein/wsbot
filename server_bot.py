@@ -14,7 +14,7 @@ motor_dt = 0.01  # pour les asyncio.sleep des moteurs
 max_sp = 1.0
 std_sp = 0.85
 rot_sp = 0.55
-rot_diff = 0.3  # vu comme pourcentage de diff par rapport à l'autre roue
+rot_diff = 0.7  # vu comme pourcentage de diff par rapport à l'autre roue
 
 def sgn(x):
 	if x == 0: 
@@ -153,7 +153,7 @@ def manage_state():
 		rsp = 0.0
 
 	else:
-		if arrows_state[2]:
+		if arrows_state[3]:
 			# regarder si basis_sp != 0, on peut jouer avec ce qu'on fait pour les plus grdes vitesses, ou alors simplifier le truc
 			if basis_speed == 0.0:
 				lsp = - rot_sp
@@ -161,7 +161,7 @@ def manage_state():
 			else:
 				rsp = basis_speed
 				lsp = basis_speed * (1 - rot_diff) * sgn(basis_speed)
-		elif arrows_state[3]:
+		elif arrows_state[2]:
 			if basis_speed == 0.0:
 				rsp = - rot_sp
 				lsp = rot_sp
